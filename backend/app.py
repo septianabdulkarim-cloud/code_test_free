@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, render_template, session
 import requests
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__, template_folder="../templates", static_folder="../static")
 app.secret_key = "supersecretkey"  # ganti dengan kunci rahasia yg kuat
 
 @app.route("/")
