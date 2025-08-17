@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Map Search (Leaflet + Nominatim)</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Maps Septian Abdul Karim</h2>
+    
+    <div class="input-group">
+      <input type="text" id="prompt" placeholder="e.g. indomaret bandung">
+      <select id="category">
+        <option value="">-- Semua Kategori --</option>
+        <option value="supermarket">Supermarket</option>
+        <option value="restaurant">Restoran</option>
+        <option value="hospital">Rumah Sakit</option>
+        <option value="school">Sekolah</option>
+        <option value="atm">ATM</option>
+      </select>
+      <button onclick="sendPrompt()">Cari</button>
+    </div>
+
+    <div id="result"></div>
+    <div id="map" style="height: 400px; margin-top: 20px;"></div>
+
+    <div class="history">
+      <h4>Riwayat Pencarian:</h4>
+      <ul id="historyList"></ul>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>Powered by OpenStreetMap & Leaflet.js</p>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let map = L.map("map").setView([-6.2, 106.8], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    // Simpan riwayat di localStorage
+    function saveHistory(query) {
+      let history = JSON.parse(localStorage.getItem("searchHistory") || "[]");
+      if (!history.includes(query)) {
+        history.unshift(query);
+        if (history.length > 10) history.pop();
+        localStorage.setItem("searchHistory", JSON.stringify(history));
+      }
+    }
+
+    // Render riwayat (gabungan dari localStorage + server)
+    async function renderHistory() {
+      let history = JSON.parse(localStorage.getItem("searchHistory") || "[]");
+
+      try {
+        let res = await fetch("/history");
+        if (res.ok) {
+          let serverHistory = await res.json();
+          serverHistory.forEach(item => {
+            const text = item.query + (item.category ? " (" + item.category + ")" : "");
+            if (!history.includes(text)) {
+              history.unshift(text);
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Gagal ambil history dari server:", err);
+      }
+
+      history = history.slice(0, 10); // max 10
+      localStorage.setItem("searchHistory", JSON.stringify(history));
+
+      const list = document.getElementById("historyList");
+      list.innerHTML = "";
+      history.forEach(item => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        li.onclick = () => {
+          document.getElementById("prompt").value = item;
+          sendPrompt();
+        };
+        list.appendChild(li);
+      });
+    }
+
+    // Kirim pencarian
+    async function sendPrompt() {
+      const prompt = document.getElementById("prompt").value.trim();
+      const category = document.getElementById("category").value;
+      if (!prompt) return;
+
+      const res = await fetch("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: prompt, category: category })
+      });
+
+      const resultDiv = document.getElementById("result");
+      resultDiv.innerHTML = "";
+
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker) map.removeLayer(layer);
+      });
+
+      const data = await res.json();
+      if (data.error) {
+        resultDiv.innerHTML = "<p>" + data.error + "</p>";
+        return;
+      }
+
+      saveHistory(prompt);
+      renderHistory();
+
+      data.forEach((item, index) => {
+        const { lat, lon, display_name } = item;
+        resultDiv.innerHTML += `<p>${index + 1}. ${display_name}</p>`;
+        const marker = L.marker([lat, lon]).addTo(map);
+        marker.bindPopup(display_name);
+        if (index === 0) {
+          map.setView([lat, lon], 14);
+          marker.openPopup();
+        }
+      });
+    }
+
+    renderHistory();
+  </script>
+</body>
+</html>
